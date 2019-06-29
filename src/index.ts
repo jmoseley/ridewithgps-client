@@ -1,7 +1,12 @@
 import axios from "axios";
 
 import * as types from "./types";
-import { NoUserIdError, UnauthorizedError, HttpError } from "./errors";
+import {
+  NoUserIdError,
+  UnauthorizedError,
+  HttpError,
+  BadResponseError
+} from "./errors";
 
 const BASE_PATH = "https://www.ridewithgps.com";
 
@@ -25,11 +30,11 @@ export class RideWithGPSClient {
     offset?: number;
     limit?: number;
   } = {}) {
-    if (!userId || !this.authenticatedUserId) {
+    if (!userId && !this.authenticatedUserId) {
       throw new NoUserIdError();
     }
 
-    const result = await this.doRequest(
+    const data: { results: types.BaseRide[] } = await this.doRequest(
       `/users/${userId || this.authenticatedUserId}/trips.json`,
       {
         offset,
@@ -37,31 +42,38 @@ export class RideWithGPSClient {
       }
     );
 
-    const rides: types.BaseRide[] = result.data.results;
+    const rides: types.BaseRide[] = data.results;
 
     return rides;
   }
 
   public async getUser() {
-    const user: types.AuthenticatedUser = await this.doRequest(
+    const data: { user?: types.AuthenticatedUser } = await this.doRequest(
       `/users/current.json`
     );
+    if (!data.user) {
+      throw new BadResponseError("No user returned with response.");
+    }
 
-    return user;
+    return data.user;
   }
 
   public async authenticateUser(email: string, password: string) {
-    const user: types.AuthenticatedUser = await this.doRequest(
+    const data: { user?: types.AuthenticatedUser } = await this.doRequest(
       `/users/current.json`,
       {
         email,
         password
       }
     );
-    this.authenticatedUserId = user.id;
-    this.authToken = user.auth_token;
+    if (!data.user) {
+      throw new BadResponseError("No user returned with response.");
+    }
 
-    return user;
+    this.authenticatedUserId = data.user.id;
+    this.authToken = data.user.auth_token;
+
+    return data.user;
   }
 
   private async doRequest(path: string, params: object = {}) {
